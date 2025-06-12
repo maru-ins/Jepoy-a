@@ -3,6 +3,7 @@ import time
 import re
 from bs4 import BeautifulSoup
 
+
 def main():
     print("[!] Silakan buka https://zefoy.com di browser dan selesaikan CAPTCHA.")
     phpsessid = input("[>] Masukkan PHPSESSID: ").strip()
@@ -11,56 +12,67 @@ def main():
         "Cookie": f"PHPSESSID={phpsessid}"
     }
 
-    # 1) Ambil form Search
     res = requests.get("https://zefoy.com", headers=headers)
     soup = BeautifulSoup(res.text, 'html.parser')
-    search_form = soup.find('form', action=True)
-    endpoint = 'https://zefoy.com/' + search_form['action']
-    search_field = search_form.find('input', {'type': 'search'})['name']
+    form = soup.find('form', action=True)
+    if not form:
+        print("[x] Form tidak ditemukan. Pastikan captcha selesai dan cookie valid.")
+        return
 
-    # Input user
+    endpoint = 'https://zefoy.com/' + form['action']
+    input_field = form.find('input', {'type': 'search'})
+    if not input_field:
+        print("[x] Field pencarian tidak ditemukan.")
+        return
+
+    field_name = input_field.get('name')
     link = input("[>] Masukkan link TikTok: ").strip()
-    total_runs = int(input("[>] Berapa kali ingin dijalankan?: ").strip())
+    try:
+        jumlah = int(input("[>] Berapa kali ingin dijalankan?: ").strip())
+    except ValueError:
+        print("[x] Jumlah tidak valid.")
+        return
 
-    for attempt in range(1, total_runs + 1):
-        print(f"\n[#] Percobaan ke-{attempt}/{total_runs}")
+    for i in range(jumlah):
+        print(f"\n[#] Percobaan ke-{i+1}/{jumlah}")
+        data_search = {field_name: link}
+        r1 = requests.post(endpoint, headers=headers, data=data_search)
 
-        # 2) POST Search → dapat form kedua
-        r_search = requests.post(endpoint, headers=headers, data={search_field: link})
-        soup2 = BeautifulSoup(r_search.text, 'html.parser')
-        send_form = soup2.find('form', action=search_form['action'])
-        if not send_form:
-            wait_el = soup2.find(class_='views-countdown')
-            if wait_el:
-                m, s = re.findall(r'(\d+)\s*minute.*?(\d+)\s*seconds', wait_el.text)[0]
-                delay = int(m)*60 + int(s)
-                print(f"[!] Harus menunggu {delay} detik...")
-                time.sleep(delay)
+        soup1 = BeautifulSoup(r1.text, 'html.parser')
+        boost_form = soup1.find('form', action=form['action'])
+        if not boost_form:
+            print("[!] Tidak menemukan form pengiriman. Mungkin sedang delay.")
+            if 'Please wait' in r1.text:
+                delay_match = re.search(r'(\d+)\s*seconds', r1.text)
+                wait_time = int(delay_match.group(1)) if delay_match else 300
+                print(f"[~] Menunggu {wait_time} detik...")
+                time.sleep(wait_time)
                 continue
-            print("[x] Gagal menemukan form kirim views.")
             continue
 
-        # 3) Ambil hidden inputs → payload
-        hidden = {inp['name']: inp['value']
-                  for inp in send_form.find_all('input', {'type': 'hidden'})}
-        if not hidden:
-            print("[x] Hidden inputs tidak ditemukan.")
+        hidden_inputs = boost_form.find_all('input', {'type': 'hidden'})
+        payload = {inp['name']: inp['value'] for inp in hidden_inputs if inp.get('name') and inp.get('value')}
+
+        if not payload:
+            print("[x] Tidak menemukan data tersembunyi untuk dikirim.")
             continue
 
-        # 4) POST boost
-        r_send = requests.post(endpoint, headers=headers, data=hidden)
-        if 'views-countdown' in r_send.text:
-            wait_el = BeautifulSoup(r_send.text, 'html.parser').find(class_='views-countdown')
-            m, s = re.findall(r'(\d+)\s*minute.*?(\d+)\s*seconds', wait_el.text)[0]
-            delay = int(m)*60 + int(s)
-            print(f"[!] Delay lagi: {delay} detik.")
+        r2 = requests.post(endpoint, headers=headers, data=payload)
+        if 'Please wait' in r2.text or 'views-countdown' in r2.text:
+            print("[!] Terkena limit. Menunggu...")
+            delay = 300
+            match = re.search(r'(\d+)\s*seconds', r2.text)
+            if match:
+                delay = int(match.group(1))
+            print(f"[~] Delay: {delay} detik")
             time.sleep(delay)
         else:
-            print(f"[✓] Boost ke-{attempt} berhasil!")
+            print(f"[✓] Boost ke-{i+1} berhasil!")
 
         time.sleep(5)
 
     print("\n[✓] Semua percobaan selesai.")
+
 
 if __name__ == '__main__':
     main()
