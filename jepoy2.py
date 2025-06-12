@@ -3,7 +3,6 @@ import time
 import re
 from bs4 import BeautifulSoup
 
-
 def main():
     print("[!] Silakan buka https://zefoy.com di browser dan selesaikan CAPTCHA.")
     phpsessid = input("[>] Masukkan PHPSESSID: ").strip()
@@ -12,77 +11,56 @@ def main():
         "Cookie": f"PHPSESSID={phpsessid}"
     }
 
-    # Ambil halaman utama dan form search
-    print("[~] Mengambil form dari halaman utama...")
-    resp = requests.get("https://zefoy.com", headers=headers)
-    if resp.status_code != 200:
-        print("[x] Gagal mengakses Zefoy.com (status code != 200)")
-        return
+    # 1) Ambil form Search
+    res = requests.get("https://zefoy.com", headers=headers)
+    soup = BeautifulSoup(res.text, 'html.parser')
+    search_form = soup.find('form', action=True)
+    endpoint = 'https://zefoy.com/' + search_form['action']
+    search_field = search_form.find('input', {'type': 'search'})['name']
 
-    soup = BeautifulSoup(resp.text, 'html.parser')
-    form = soup.find('form', action=True)
-    if not form:
-        print("[x] Gagal menemukan form. Pastikan CAPTCHA sudah diisi dan cookie benar.")
-        return
-
-    endpoint = 'https://zefoy.com/' + form['action']
-    search_field = form.find('input', {'type': 'search'})['name']
-    print(f"[✓] Endpoint: {endpoint}")
-    print(f"[✓] Search field name: {search_field}\n")
-
-    # Input data video
+    # Input user
     link = input("[>] Masukkan link TikTok: ").strip()
-    try:
-        count = int(input("[>] Berapa kali ingin dijalankan?: ").strip())
-    except ValueError:
-        print("[x] Input jumlah tidak valid.")
-        return
+    total_runs = int(input("[>] Berapa kali ingin dijalankan?: ").strip())
 
-    for i in range(1, count + 1):
-        print(f"\n[#] Percobaan ke-{i}/{count}: Searching video...")
-        # Step 1: Search untuk dapat hidden fields
-        data_search = {search_field: link}
-        r1 = requests.post(endpoint, headers=headers, data=data_search)
-        if r1.status_code != 200:
-            print("[x] Gagal POST search, status code:", r1.status_code)
-            break
+    for attempt in range(1, total_runs + 1):
+        print(f"\n[#] Percobaan ke-{attempt}/{total_runs}")
 
-        soup1 = BeautifulSoup(r1.text, 'html.parser')
-        hidden_inputs = soup1.find_all('input', {'type': 'hidden'})
-        payload = {inp['name']: inp['value'] for inp in hidden_inputs}
-        if not payload:
-            print("[x] Gagal mengambil hidden inputs.")
-            break
-
-        print(f"[~] Found hidden fields: {list(payload.keys())}")
-
-        # Step 2: Submit boost request
-        print("[#] Mengirim request boost...")
-        r2 = requests.post(endpoint, headers=headers, data=payload)
-        text = r2.text
-
-        # Deteksi delay atau success
-        if 'Please wait' in text:
-            # parse wait time
-            m = re.search(r'Please wait (\d+) minute', text)
-            s = re.search(r'(\d+) seconds', text)
-            wait = 300
-            if m and s:
-                wait = int(m.group(1)) * 60 + int(s.group(1))
-            print(f"[!] Harus menunggu {wait} detik sebelum submit berikutnya...")
-            time.sleep(wait)
+        # 2) POST Search → dapat form kedua
+        r_search = requests.post(endpoint, headers=headers, data={search_field: link})
+        soup2 = BeautifulSoup(r_search.text, 'html.parser')
+        send_form = soup2.find('form', action=search_form['action'])
+        if not send_form:
+            wait_el = soup2.find(class_='views-countdown')
+            if wait_el:
+                m, s = re.findall(r'(\d+)\s*minute.*?(\d+)\s*seconds', wait_el.text)[0]
+                delay = int(m)*60 + int(s)
+                print(f"[!] Harus menunggu {delay} detik...")
+                time.sleep(delay)
+                continue
+            print("[x] Gagal menemukan form kirim views.")
             continue
-        elif 'Next Submit: READY' in text or r2.status_code == 200:
-            print(f"[✓] Boost ke-{i} berhasil!")
-        else:
-            print("[!] Respons tak terduga, periksa manual output:")
-            print(text)
 
-        # Delay kecil antar percobaan
+        # 3) Ambil hidden inputs → payload
+        hidden = {inp['name']: inp['value']
+                  for inp in send_form.find_all('input', {'type': 'hidden'})}
+        if not hidden:
+            print("[x] Hidden inputs tidak ditemukan.")
+            continue
+
+        # 4) POST boost
+        r_send = requests.post(endpoint, headers=headers, data=hidden)
+        if 'views-countdown' in r_send.text:
+            wait_el = BeautifulSoup(r_send.text, 'html.parser').find(class_='views-countdown')
+            m, s = re.findall(r'(\d+)\s*minute.*?(\d+)\s*seconds', wait_el.text)[0]
+            delay = int(m)*60 + int(s)
+            print(f"[!] Delay lagi: {delay} detik.")
+            time.sleep(delay)
+        else:
+            print(f"[✓] Boost ke-{attempt} berhasil!")
+
         time.sleep(5)
 
     print("\n[✓] Semua percobaan selesai.")
-
 
 if __name__ == '__main__':
     main()
