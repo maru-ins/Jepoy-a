@@ -1,9 +1,9 @@
 #!/data/data/com.termux/files/usr/bin/bash
 
 # Masukkan data kamu di sini:
-OLD_USER="username_lama"
+OLD_USER="RxR00"
 OLD_TOKEN="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"
-NEW_USER="username_baru"
+NEW_USER="maru-ins"
 NEW_TOKEN="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"
 
 # Buat direktori kerja
